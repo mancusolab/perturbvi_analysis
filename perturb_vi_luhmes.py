@@ -13,6 +13,7 @@ from perturbvi import utils
 import jax.numpy as jnp
 from jax import config
 from jax.experimental import sparse
+import jax.random as rdm
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -116,7 +117,7 @@ column_names_b = ['b' + str(i) for i in range(z_dim)]
 pip_df = pd.DataFrame(pip.T, columns=column_names_w, index=gene_symbol)
 perturb_gene_list = G_reduce.columns.tolist()
 
-path_results = "/Users/camellia/Project/perturbvi_results/luhmes"
+path_results = "/Users/camellia/Project/perturbvi_analysis/results/luhmes"
 pip_df.to_csv(f"{path_results}/pip_df.csv")
 
 perturb_degs = tools.find_top_genes(pip_df,0.95)
@@ -145,4 +146,16 @@ np.asarray(perturb_degs["w6"])
 np.asarray(perturb_degs["w10"])
 
 # compute lfsr
-utils.compute_lfsr(params)
+lfsr = utils.compute_lfsr(params)
+# subset if rows contain a value that is < 0.05
+lfsr_df = pd.DataFrame(lfsr, index=G_reduce.columns.tolist())
+lfsr_df.to_csv(f"{path_results}/lfsr_df.csv")
+sig_df = lfsr_df[(lfsr_df < 0.05).sum(axis=1)>1]
+# test the new lfsr function
+lfsr_key = rdm.PRNGKey(0)
+lfsr_new = utils.compute_lfsr(lfsr_key, params)
+lfsr_new.block_until_ready()
+lfsr_new_np = np.array(lfsr_new)  # Convert JAX array to NumPy
+lfsr_new_df = pd.DataFrame(lfsr_new_np, index=G_reduce.columns.tolist())
+#lfsr_new_df.to_csv(f"{path_results}/lfsr_new_df.csv")
+
