@@ -1,0 +1,291 @@
+rm(list = ls())
+library(data.table)
+library(Matrix)
+library(tidyverse)
+library(ggplot2)
+theme_set(theme_bw() +   theme(axis.text = element_text(size = 12), 
+                               axis.title=element_text(size=10,face="bold"),
+                               legend.title = element_text(size=8),
+                               legend.text = element_text(size=8),
+                               panel.grid.minor = element_blank(),
+                               panel.grid.major = element_blank(),
+                               plot.title = element_text(hjust = 0.5)))
+library(gridExtra)
+library(ComplexHeatmap)
+library(kableExtra)
+library(latex2exp)
+library(cowplot)
+eff_colormap <- circlize::colorRamp2(breaks = c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+                                     colors = c("#07006b","#1200f9", "#7166ff","grey95","#e7767f","#e83828","#bf3d22"))
+
+pathway_colormap = c("#027347","#7f702a","#a81e32","#f08837","#370708","#81D8D0","#dfb428","#738896","#003153")
+one_row_height = 2.5
+one_col = 3.35
+onehalf_col = 4.49
+two_col = 6.85
+
+
+#read neuron differention data
+neuron_diff = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/neuron_diff_vi.csv") %>% 
+  rename("gene" = `...1`)
+
+lfsr_diff = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/lfsr_diff_vi.csv") %>% 
+  rename("gene" = `...1`)
+
+neuron_diff_path = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/differentiation_pathway_gene.csv")
+
+neuron_diff = neuron_diff %>% 
+  inner_join(neuron_diff_path,by = "gene")
+
+# modify the neg. regulation gene
+neg_reg_dev_db =  read.table("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/neg_reg_dev_db.csv", 
+                                 header=FALSE, sep="\t", quote="", 
+                                 col.names=c("gene",  "GO_class","Evidence_Type", "Reference"))
+neg_reg_diff_db =  read.table("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/neg_reg_diff_db.csv", 
+                                 header=FALSE, sep="\t", quote="", 
+                                 col.names=c("gene",  "GO_class","Evidence_Type", "Reference"))
+pos_reg_diff_db =  read.table("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/pos_reg_diff_db.csv", 
+                                 header=FALSE, sep="\t", quote="", 
+                                 col.names=c("gene",  "GO_class","Evidence_Type", "Reference"))
+pos_reg_dev_db =  read.table("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/pos_reg_dev_db.csv", 
+                                 header=FALSE, sep="\t", quote="", 
+                                 col.names=c("gene",  "GO_class","Evidence_Type", "Reference"))
+pos_dev_gene =   
+  neuron_diff %>% 
+  filter(gene %in% pos_reg_dev_db$gene) %>% 
+  select(gene) %>% 
+  pull(.)
+
+pos_diff_gene =   
+  neuron_diff %>% 
+  filter(gene %in% pos_reg_diff_db$gene) %>% 
+  select(gene) %>% 
+  pull(.)
+
+
+neg_dev_gene = 
+  neuron_diff %>% 
+  filter(gene %in% neg_reg_dev_db$gene) %>% 
+  select(gene) %>% 
+  pull(.)
+
+neg_diff_gene = 
+  neuron_diff %>% 
+  filter(gene %in% neg_reg_diff_db$gene) %>% 
+  select(gene) %>% 
+  pull(.)
+
+mature_neuron = c("PCP4","ELAVL4","MAP2","STMN2","NEFL","ZEB2","CRABP2","DPYSL3","MAP1B")
+
+neuron_diff = 
+  neuron_diff %>% 
+  mutate(pathway = ifelse(gene %in% neg_dev_gene,"neg. reg. of neuron proj. development",pathway)) %>% 
+  mutate(pathway = ifelse(gene %in% pos_dev_gene,"pos. reg. of neuron proj. development",pathway)) %>% 
+  mutate(pathway = ifelse(gene %in% neg_diff_gene,"neg. reg. of neuron differentiation",pathway)) %>% 
+  mutate(pathway = ifelse(gene %in% pos_diff_gene,"pos. reg. of neuron differentiation",pathway)) %>% 
+  mutate(pathway = ifelse(gene %in% mature_neuron,"mature neuron",pathway)) 
+
+
+write.csv(neuron_diff,"./differentiation_pathway_gene_update.csv")
+
+#separte gene based on function: repress or accelarate
+neuron_diff_repress = 
+  neuron_diff %>% 
+  select(gene,ADNP,CHD2,ASH1L,ARID1B)
+
+neuron_diff_acc = 
+  neuron_diff %>% 
+  select(gene,PTEN,SETD5,POGZ)
+
+#
+repress_filtered <- neuron_diff_repress[apply(neuron_diff_repress[,-1], 1, function(row) all(abs(row) > 0.01)), ]
+acc_filtered <- neuron_diff_acc[apply(neuron_diff_acc[,c(-1,-4)], 1, function(row) all(abs(row) > 0.01)), ]
+
+
+repress_filtered_mat = as.matrix(repress_filtered[,-1])
+rownames(repress_filtered_mat) = repress_filtered$gene
+
+acc_filtered_mat = as.matrix(acc_filtered[,-1])
+rownames(acc_filtered_mat) = acc_filtered$gene
+
+
+repress_map = Heatmap(repress_filtered_mat, 
+              name = "Overall effect", # Title for the color legend
+              col = eff_colormap, # Color mapping
+              na_col = "grey90", # Color for NA values
+              cluster_rows = TRUE, # Cluster rows
+              cluster_columns = FALSE, # Do not cluster columns
+              show_row_dend = FALSE, # Do not show row dendrogram
+              show_column_dend = FALSE, # Do not show column dendrogram
+              show_heatmap_legend = F, # Show heatmap legend
+              row_names_gp = gpar(fontsize = 10.5), # Graphic parameters for row names
+              column_names_rot = 45, # Rotate column names
+              column_names_side = "top", # Position of column names
+              show_row_names = TRUE, # Ensure row names are shown
+              width = unit(6, "cm")) # Width of the heatmap
+draw(repress_map)
+
+png("repress_map.png", width = one_col, height = one_row_height*3, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(repress_map, heatmap_legend_side = "bottom")
+dev.off() # Close the PNG device
+
+
+
+acc_map = Heatmap(acc_filtered_mat, 
+              name = "Overall effect", # Title for the color legend
+              col = eff_colormap, # Color mapping
+              na_col = "grey90", # Color for NA values
+              cluster_rows = TRUE, # Cluster rows
+              cluster_columns = FALSE, # Do not cluster columns
+              show_row_dend = FALSE, # Do not show row dendrogram
+              show_column_dend = FALSE, # Do not show column dendrogram
+              show_heatmap_legend = T, # Show heatmap legend
+              row_names_gp = gpar(fontsize = 10.5), # Graphic parameters for row names
+              column_names_rot = 45, # Rotate column names
+              column_names_side = "top", # Position of column names
+              show_row_names = TRUE, # Ensure row names are shown
+              width = unit(6, "cm")) # Width of the heatmap
+acc_map = draw(acc_map)
+
+
+original_row_order = row_order(acc_map)
+reversed_row_order <- rev(original_row_order)
+acc_filtered_mat_rever = acc_filtered_mat[reversed_row_order,]
+
+acc_map_rev = Heatmap(acc_filtered_mat_rever, 
+                  name = "Overall effect", # Title for the color legend
+                  col = eff_colormap, # Color mapping
+                  na_col = "grey90", # Color for NA values
+                  cluster_rows = F, # Cluster rows
+                  cluster_columns = FALSE, # Do not cluster columns
+                  show_row_dend = FALSE, # Do not show row dendrogram
+                  show_column_dend = FALSE, # Do not show column dendrogram
+                  show_heatmap_legend = TRUE, # Show heatmap legend
+                  row_names_gp = gpar(fontsize = 10.5), # Graphic parameters for row names
+                  column_names_rot = 45, # Rotate column names
+                  column_names_side = "top", # Position of column names
+                  show_row_names = TRUE, # Ensure row names are shown
+                  width = unit(6, "cm")) # Width of the heatmap
+acc_map_rev = draw(acc_map_rev, heatmap_legend_side = "right")
+
+png("acc_map.png", width = two_col, height = one_row_height*3, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(acc_map_rev, heatmap_legend_side = "right")
+dev.off() # Close the PNG device
+
+
+
+# negative regulation of neuron differentiation: PBX1
+# negative regulaton of neuron projection development: ITM2C,DRAXIN
+# positive regulation of neuron differentiation: NEUROD1,CAMK2B
+# neuron projection development: ALCAM, STMN1,STMN2
+# mature neuron: NEFL, MAP2, MAP1B, CRABP2,
+# regulation of neurotransmitter:IQSEC1, BAIAP2
+
+
+complexplot_gene_perturbation <- function(effect_df,clus_row = F,
+                                          effect_name = "PerturbVI\nOverall effect",
+                                          score_break = c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+                                          color_break = c("#07006b","#1200f9", "#7166ff","grey95","#e7767f","#e83828","#bf3d22")){
+  #reorder the dataframe by pathway
+  effect_df = effect_df[order(effect_df$pathway), ]
+  #extract numeric column
+  numeric_columns <- sapply(effect_df, is.numeric)
+  effect_mat = as.matrix(effect_df[,numeric_columns])
+  rownames(effect_mat) = effect_df$gene
+  
+  #factorize pathway
+  effect_df$pathway <- factor(effect_df$pathway, levels = unique(effect_df$pathway))
+
+
+  lgd_list <- list()
+  col_fun <- circlize::colorRamp2(breaks = score_break,
+                                  colors = color_break)
+  lgd_list[["effectsize"]] <- Legend(title = effect_name,
+                                     at = score_break,
+                                     col_fun = col_fun)
+  
+  marker_colormap <- structure(pathway_colormap[1:length(levels(effect_df$pathway))],
+                               names = levels(effect_df$pathway))
+  lgd_list[["Marker"]] <-  Legend(title = "Marker annotation",
+                                  labels = levels(effect_df$pathway),
+                                  at = levels(effect_df$pathway),
+                                  legend_gp = gpar(fill = marker_colormap))
+  right_annot <- rowAnnotation(Marker = effect_df$pathway,
+                               col = list(Marker = marker_colormap),
+                               annotation_legend_param = list(
+                                 Marker = list(
+                                   title = "Marker annotation",
+                                   at = levels(effect_df$pathway),
+                                   labels = levels(effect_df$pathway)
+                                 )
+                               ),
+                               show_annotation_name = F,
+                               show_legend = F)
+  if (clus_row == T){
+    map1 <- Heatmap(effect_mat,
+                    name = effect_name,
+                    col = col_fun,
+                    rect_gp = gpar(pathway = "none"),
+                    border_gp = gpar(col = "black"),
+                    row_title = "Neuron marker genes",
+                    column_title = "Perturbations",
+                    cluster_rows = T, cluster_columns = F,
+                    show_row_dend = FALSE, # Do not show row dendrogram
+                    show_column_dend = FALSE, # Do not show column dendrogram
+                    right_annotation = right_annot,
+                    show_heatmap_legend = F,
+                    row_names_gp = gpar(fontsize = 10.5),
+                    column_names_rot = 45,
+                    column_names_side = "top",
+                    column_title_side = "bottom")
+  }
+  else{  
+    map1 <- Heatmap(effect_mat,
+                         name = effect_name,
+                         col = col_fun,
+                         rect_gp = gpar(pathway = "none"),
+                         border_gp = gpar(col = "black"),
+                         row_title = "Neuron marker genes",
+                         column_title = "Perturbations",
+                         cluster_rows = F, cluster_columns = F,
+                         show_row_dend = FALSE, # Do not show row dendrogram
+                         show_column_dend = FALSE, # Do not show column dendrogram
+                         right_annotation = right_annot,
+                         show_heatmap_legend = F,
+                         row_names_gp = gpar(fontsize = 10.5),
+                         column_names_rot = 45,
+                         column_names_side = "top",
+                         column_title_side = "bottom")}
+
+  draw(map1, annotation_legend_list = lgd_list)
+}
+
+
+all_effect = complexplot_gene_perturbation(neuron_diff)
+png("all_effect.png", width = two_col, height = one_row_height*5, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(all_effect)
+dev.off() # Close the PNG device
+
+exclude_small_eff_gene = c("DCC","RUFY3","CRMP1","PPIA","YWHAZ","CTHRC1","PHGDH","CFL1","SOD1","HSP90AB1","HSP90AA1","CASP3",
+                           "LHX9","DCX","ANK3","DPYSL2","ETV1","NRXN1","NGFR","RIPOR2","MYCBP2","APLP1","DPYSL5","NCAM1","SERPINI1",
+                           "CTNNB1","PTPRG","XBP1","CBLN1","RTN1","MDGA1","STMN2","SOX11")
+
+neuron_diff_subset = neuron_diff %>% filter(gene %notin% exclude_small_eff_gene) %>% select(-DYRK1A) %>% 
+  select(gene,ADNP,CHD2,ASH1L,PTEN,SETD5,POGZ,ARID1B,pathway)
+subset_effect = complexplot_gene_perturbation(neuron_diff_subset)
+
+png("subset_effect.png", width = two_col, height = one_row_height*3, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(subset_effect)
+dev.off() # Close the PNG device
+##select top
+exclude_small_eff_gene = c("DCC","RUFY3","CRMP1","PPIA","YWHAZ","CTHRC1","PHGDH","CFL1","SOD1","HSP90AB1","HSP90AA1","CASP3",
+                           "LHX9","DCX","ANK3","DPYSL2","ETV1","NRXN1","NGFR","RIPOR2","MYCBP2","APLP1","DPYSL5","NCAM1","SERPINI1",
+                           "CTNNB1","PTPRG","XBP1","CBLN1","RTN1","MDGA1","STMN2","SOX11")
+
+neuron_diff_subset = neuron_diff %>% filter(gene %notin% exclude_small_eff_gene) %>% select(-DYRK1A) %>% 
+  select(gene,ADNP,CHD2,ASH1L,PTEN,SETD5,POGZ,ARID1B,pathway)
+subset_effect = complexplot_gene_perturbation(neuron_diff_subset)
+
+png("subset_effect.png", width = two_col, height = one_row_height*3, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(subset_effect)
+dev.off() # Close the PNG device

@@ -1,0 +1,748 @@
+rm(list = ls())
+library(data.table)
+library(Matrix)
+library(tidyverse)
+library(stringr)
+library(gridExtra)
+library(ComplexHeatmap)
+library(kableExtra)
+library(latex2exp)
+library(cowplot)
+library(circlize)
+library(grid)
+library(patchwork)
+
+theme_set(theme_bw() +   theme(axis.text = element_text(size = 14), 
+                               axis.title=element_text(size=14,face="bold"),
+                               legend.title = element_text(size=14),
+                               legend.text = element_text(size=14),
+                               panel.grid.minor = element_blank(),
+                               panel.grid.major = element_blank(),
+                               plot.title = element_text(hjust = 0.5)))
+
+
+model_pal = c("GSFA" = "#008C8C", "PerturbVI" = "#E85827")
+one_row_height = 2.5
+one_col = 3.35
+onehalf_col = 4.49
+two_col = 6.85
+cwd = "/Users/camellia/PycharmProjects/perturbvi_analysis/luhmes/luhmes_analysis_R"
+setwd(cwd)
+
+#enrich_my = read.csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/perturb_vi/gsea/filtered_gsea.csv") %>% select(-X) %>% 
+  #mutate(method = "PerturbVI")
+enrich_my <- read.csv("/Users/camellia/PycharmProjects/perturbvi_analysis/luhmes/luhmes_results/perturb_vi_c/GSEA/enrichment_all.csv") %>%
+  rename(FDR = `Enrichment.FDR.`,
+         size = `nGenes.`,
+         enrichmentRatio = `Fold.Enrichment.`,
+         description = `Pathway.`) %>%
+  mutate(across(where(is.character), ~ gsub("\\\\$", "", .))) %>%
+  mutate(FDR = as.numeric(FDR),
+         enrichmentRatio = as.numeric(enrichmentRatio),
+         size = as.numeric(size),
+         method = "Perturb_VI")
+
+enrich_perturb_gsfa = read.csv("/Users/camellia/PycharmProjects/perturbvi_analysis/luhmes/luhmes_results/gsfa/enrichment.csv") %>% select(-X) %>% 
+  mutate(method = "GSFA")
+
+#enrich = rbind(enrich_my,enrich_gsfa)
+
+#neuron_pathway
+neuron_pathway_my = read.csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/perturb_vi/gsea/neuron_gsea.csv") %>% select(-X) %>% 
+  mutate(method = "PerturbVI")
+neuron_pathway_gsfa = read.csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/gsfa/gsea/neuron_gsea.csv") %>% select(-X) %>% 
+  mutate(method = "GSFA")
+neuron_pathway_df = rbind(neuron_pathway_my,neuron_pathway_gsfa)
+neuron_pathway = neuron_pathway_df %>% select(Pathway) %>% pull() %>% unique()
+
+abbreviations <- c(
+  "negative" = "neg.",
+  "regulation" = "reg.",
+  "positive" = "pos.",
+  "development" = "dev.",
+  "projection" = "proj."
+)
+#function
+categorize_column <- function(data_column, num_categories) {
+  # Compute the breaks for the specified number of equal parts
+  min_val <- min(data_column, na.rm = TRUE)
+  max_val <- max(data_column, na.rm = TRUE)
+  breaks <- seq(min_val, max_val, length.out = num_categories + 1) # +1 to include max value
+  
+  # Round up the left side of each interval to the nearest integer for labels
+  rounded_breaks <- ceiling(breaks[-length(breaks)]) # Exclude the last break to avoid duplication
+  
+  # Convert labels to character for use as factor levels
+  labels <- as.character(rounded_breaks)
+  
+  # Use the computed breaks and labels with the cut function
+  categorized_column <- cut(data_column, breaks = breaks, labels = labels, include.lowest = TRUE)
+  
+  return(categorized_column)
+}
+
+########################## Step 1.DEG across component #####################
+
+data_folder <- "/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/GSFA_paper/data/LUHMES/"
+results_folder <- "/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/gsfa/"
+fit <- readRDS(paste0(results_folder, "fit_light.rds"))
+gibbs_PM <- fit$posterior_means
+PIP_mat <- gibbs_PM$F_pm
+
+pip_my = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/perturb_vi/pip_df.csv")
+pip_my = pip_my[,-1]
+rownames(pip_my) = rownames(PIP_mat)
+
+num_gene_gsfa <- apply(PIP_mat, MARGIN = 2, function(x) sum(x > 0.9))
+
+num_gene_perturb <- apply(pip_my, MARGIN = 2, function(x) sum(x > 0.9))
+# Transform each set of results into a dataframe
+df_gsfa <- data.frame(Factor = names(num_gene_gsfa), Count = as.numeric(num_gene_gsfa), Source = 'GSFA')
+df_perturb <- data.frame(Factor = names(num_gene_perturb), Count = as.numeric(num_gene_perturb), Source = 'PerturbVI')
+
+# Combine into one dataframe
+combined_num_gene <- rbind(df_gsfa, df_perturb)
+
+# Draw side-by-side boxplots
+deg_factor_plot = 
+  ggplot(combined_num_gene, aes(x = Source, y = Count)) +
+  geom_boxplot(aes(fill = Source)) +
+  scale_fill_manual(values = model_pal)+
+  labs(x = "", y = "Number of genes PIP > 0.9 \nin each component",fill = "Method")+
+  theme(axis.text.x = element_blank(),
+        legend.position = "bottom")
+ggsave("deg_factor_plot.png", deg_factor_plot, 
+       path = "/Users/camellia/PycharmProjects/perturbvi_analysis/luhmes/luhmes_results/perturb_vi_C",
+       dpi = 1000,
+       height = one_row_height, 
+       width = one_col)
+
+########################## Step 2.GSEA in factor 3,7,11 #####################
+
+neuron_pathway_subset_3 = c("axon development ","cell morphogenesis involved in neuron differentiation ","central nervous system development ",
+                            "neuron projection development ","neuron differentiation ","axongenesis ","generation of neurons ","neuron development ")
+neuron_pathway_subset_7 = c("axon guidance ","neuron projection guidance ","axon development ",
+                            "regulation of axon guidance ","regulation of axonogenesis ",
+                            "negative regulation of neuron projection development ","axon development ",
+                            "negative regulation of nervous system development ","generation of neurons ","neuron differentiation ",
+                            "neuron projection development ","neuron differentiation ","axongenesis")
+neuron_pathway_subset_11 = c("regulation of neuron differentiation ","neuron death ","forebrain development ","regulation of nervous system development ",
+                             "regulation of neuron death ","neuron differentiation ","neuron projection morphogenesis ","neuron development","neuron projection development ")
+
+# step 1.1
+#for 3,7,11, let's extarct them into one big df
+enrich_my_neuron = 
+  enrich_my %>% 
+  filter(component %in% c("z3","z7","z11"))%>% 
+  filter(Enrichment.FDR < 0.05, Fold.Enrichment >= 1) %>%
+  filter(Pathway %in% neuron_pathway) %>% 
+  mutate(log_fdr = -log10(Enrichment.FDR)) %>% 
+  mutate(log_fdr_cat = ifelse(log_fdr<2.5,2,
+                              ifelse(log_fdr<4.5,4,
+                                ifelse(log_fdr<6.5,6,
+                                     ifelse(log_fdr<8.5,8,10))))) %>% 
+  mutate(log_fdr_cat = factor(log_fdr_cat))
+
+
+# Apply abbreviations to the pathway names
+enrich_my_neuron$Pathway_short <- str_replace_all(enrich_my_neuron$Pathway, abbreviations)
+
+# short the Pathway
+enrich_my_neuron$Pathway_short <- str_wrap(enrich_my_neuron$Pathway_short, width = 25)
+enrich_my_neuron$Pathway_short <- factor(enrich_my_neuron$Pathway_short,
+                                              levels = unique(enrich_my_neuron$Pathway_short))
+
+#categorize column
+enrich_my_neuron$num_gene <- categorize_column(enrich_my_neuron$nGenes,num_categories = 4)
+
+
+#function for gsea
+plot_gsea = function(df,factor,subset){
+  enrich_p = 
+    df %>% 
+    filter(component == factor,Pathway %in% subset) %>% 
+    ggplot(aes(x = Fold.Enrichment, y = reorder(Pathway_short, Fold.Enrichment))) +
+    geom_point(aes(color = log_fdr_cat, size = num_gene)) +
+    scale_color_manual(values =  c("#a1dab4","#41b6c4","#2c7fb8","#253494","#00004d"), name = "-log10(FDR)") +
+    geom_segment(aes(x = 0, xend = Fold.Enrichment, y = Pathway_short, yend = Pathway_short, color = log_fdr_cat), size = 1) + 
+    scale_size_manual(values = seq(2, 4, 0.5), name = "N. Genes") +
+    ylab("Pathways") +
+    theme_bw() +
+    theme(axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 14),
+          axis.text = element_text(size = 14), 
+          axis.title=element_text(size=14,face="bold"),
+          legend.title = element_text(size=14),
+          legend.text = element_text(size=14),
+          legend.position = "bottom",
+          legend.justification = "center",
+          legend.box = "vertical",
+          panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
+          plot.title = element_text(hjust = 0.5)) +
+    guides(color = guide_legend(order = 2),
+           size = guide_legend(order = 1))
+  return(enrich_p)
+  
+}
+enrich_p3 = plot_gsea(enrich_my_neuron,"z3",neuron_pathway_subset_3)+labs(title = "Factor 3")
+enrich_p7 =plot_gsea(enrich_my_neuron,"z7",neuron_pathway_subset_7)+labs(title = "Factor 7")
+enrich_p11 =plot_gsea(enrich_my_neuron,"z11",neuron_pathway_subset_11)+labs(title = "Factor 11")
+legend = get_plot_component(enrich_p7, "guide-box",return_all = TRUE)[[3]]
+
+combined_plot <- (
+  enrich_p3  + theme(legend.position="none") +
+  enrich_p7  + theme(legend.position="none",axis.title.y = element_blank()) +
+  enrich_p11 + theme(legend.position="none",axis.title.y = element_blank())) + 
+  plot_layout(guides = "collect") + 
+  plot_annotation(caption = "Fold Enrichment",
+                  theme = theme(plot.caption = element_text(hjust = 0.5, vjust = 1, size = 14,face = "bold")))
+
+enrich_manu = plot_grid(combined_plot, legend, nrow = 2,rel_heights = c(1.3, 0.2))
+
+first_row = plot_grid(deg_factor_plot,
+                      enrich_manu,nrow = 1,rel_widths = c(1, 4),labels = c("A","B"))
+
+ggsave("./enrich_manu.png", plot = enrich_manu, path = "./", dpi = 1000,
+       height = one_row_height*2, width = two_col*2)
+
+ggsave("./loading_plot.png", plot = first_row, path = "./", dpi = 1000,
+       height = one_row_height*2, width = two_col*2.5)
+
+
+########################## Step 2.Heatmap for B #####################
+beta_my = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/perturb_vi/beta_target.csv")
+colnames(beta_my) = c("target",paste0("Factor",1:12))
+
+score_break = c(-0.4,-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3,0.4)
+color_break = c("#00004d","#1034A6","#1200f9", "#7166ff","grey95","#e7767f","#e83828","#bf3d22","#8A0000")
+col_fun <- circlize::colorRamp2(breaks = score_break,
+                                colors = color_break)
+
+
+beta_mat = as.matrix(beta_my[,-1])
+rownames(beta_mat) = beta_my$target
+full_beta_map <- Heatmap(beta_mat,
+                         name = "Perturbation-Factor \neffects",
+                         col = col_fun,
+                         rect_gp = gpar(pathway = "none"),
+                         border_gp = gpar(col = "black"),
+                         column_title = "Factor",
+                         row_title = "Perturbations",
+                         cluster_rows = TRUE, 
+                         cluster_columns = FALSE,
+                         show_row_dend = FALSE, 
+                         show_column_dend = FALSE, 
+                         show_heatmap_legend = TRUE,
+                         row_names_gp = gpar(fontsize = 14),
+                         column_names_gp = gpar(fontsize = 14),
+                         column_names_rot = 45,
+                         column_names_side = "top",
+                         column_title_side = "bottom",
+                         column_title_gp = gpar(fontface = "bold", fontsize = 14), 
+                         row_title_gp = gpar(fontface = "bold", fontsize = 14)) 
+
+
+png("./full_beta_map.png", width = two_col, height = one_row_height*2, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(full_beta_map ,heatmap_legend_side = "right")
+dev.off() # Close the PNG device
+
+
+part_beta_map <-   Heatmap(beta_mat[c(1,2,3,4,7,11,12,14),],
+                           name = "Perturbation-Factor \neffects",
+                           col = col_fun,
+                           rect_gp = gpar(pathway = "none"),
+                           border_gp = gpar(col = "black"),
+                           column_title = "Factor",
+                           row_title = "Perturbations",
+                           cluster_rows = T, 
+                           cluster_columns = F,
+                           show_row_dend = FALSE, 
+                           show_column_dend = FALSE, 
+                           show_heatmap_legend = T,
+                           row_names_gp = gpar(fontsize = 14),
+                           column_names_gp = gpar(fontsize = 14),
+                           column_names_rot = 45,
+                           column_names_side = "top",
+                           column_title_side = "bottom",                         
+                           column_title_gp = gpar(fontface = "bold", fontsize = 14), 
+                           row_title_gp = gpar(fontface = "bold", fontsize = 14))
+
+part_beta_map_plot <- grid.grabExpr(draw(part_beta_map))
+
+png("./part_beta_map.png", width = two_col*0.8, height = one_row_height*1.5, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(part_beta_map ,heatmap_legend_side = "right")
+dev.off() # Close the PNG device
+
+
+############### Step 3. Number of genes/pathways by perturbation ##############
+deg_by_perturb = 
+  read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/deg_by_perturb.csv")[,-1] %>% 
+  mutate(method = ifelse(method == "Perturb-VI","PerturbVI",method)) %>% 
+  mutate(method = factor(method))%>% 
+  arrange(target)
+
+# filter the target with 0 count in both methods
+non_zero_counts =
+  deg_by_perturb %>% 
+  group_by(target) %>% 
+  summarise(keep = any(num > 1)) %>% 
+  filter(keep)
+
+p_deg_by_perturb = 
+  deg_by_perturb %>% 
+  filter(target %in% non_zero_counts$target) %>% 
+  ggplot(aes(x = target, y = num, fill = method)) + 
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = model_pal)+
+  geom_text(aes(label = num), position = position_dodge(width = 0.9), vjust = -0.25, size = 4) +
+  labs(title = "DEGs by perturbation",
+    x = "Perturbation", 
+    y = "Number of DEGs",
+    fill = "Method") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+#read num of enrich data
+add_pogz_gsfa_row = data.frame(target = "POGZ", count = 0, method = "GSFA")
+num_enrich_by_perturb = 
+  read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/num_enrich_by_perturb.csv")[,-1] %>% 
+  mutate(method = ifelse(method == "Perturb-VI","PerturbVI",method)) %>% 
+  mutate(method = factor(method))%>% 
+  rename(target = perturbation) %>% 
+  bind_rows(add_pogz_gsfa_row) %>% 
+  arrange(target)
+
+p_num_enrich_by_perturb = 
+  num_enrich_by_perturb %>% 
+  ggplot(aes(x = target, y = count, fill = method)) + 
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = model_pal)+
+  geom_text(aes(label = count), position = position_dodge(width = 0.9), vjust = -0.25, size = 4) +
+  labs(title = "Enriched pathways by perturbation",
+    x = "Perturbation", 
+    y = "Number of enriched pathways",
+    fill = "Method") +
+  guides(color = guide_legend(nrow = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom",
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=14))
+
+
+p_luhmes <- plot_grid(
+  p_deg_by_perturb + theme(legend.position="none"),
+  p_num_enrich_by_perturb + theme(legend.position="none"),
+  hjust = -1,
+  nrow = 1
+)
+legend_3 = get_plot_component(p_num_enrich_by_perturb, "guide-box",return_all = TRUE)[[3]]
+
+big_p_luhmes = plot_grid(p_luhmes, legend_3, nrow = 2,rel_heights = c(1, 0.1))
+
+ggsave("./deg.png", plot = big_p_luhmes, path = "./", dpi = 1000,
+       height = one_row_height*2.2, width = two_col*2.1)
+
+second_row = plot_grid(part_beta_map_plot,big_p_luhmes,nrow = 1, rel_widths = c(1, 1.5),labels = c("C","D") )
+
+############### Step 4. enrichment by perturb ###################
+enrich_by_perturb_my = read.csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/perturb_vi/gsea/gsea_by_perturb.csv") %>% select(-X) %>% 
+  mutate(method = "PerturbVI")
+enrich_by_perturb_gsfa = read.csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/luhmes_results/gsfa/gsea/gsea_by_perturb.csv") %>% select(-X) %>% 
+  mutate(method = "GSFA")
+enrich_by_perturb = rbind(enrich_by_perturb_my,enrich_by_perturb_gsfa)
+
+abbreviations <- c(
+  "negative" = "neg.",
+  "regulation" = "reg.",
+  "positive" = "pos.",
+  "development" = "dev.",
+  "projection" = "proj."
+)
+
+enrich_by_perturb_my_wide = 
+  enrich_by_perturb_my %>% 
+  filter(Pathway %in% neuron_pathway) %>% 
+  mutate(Pathway = str_replace_all(Pathway, abbreviations)) %>% 
+  filter(Fold.Enrichment>2) %>% 
+  pivot_wider(names_from = perturbation, 
+              values_from = Fold.Enrichment, 
+              id_cols = Pathway,
+              values_fill = list(Fold.Enrichment = 0))
+
+# First, remove the 'Pathway' column from the data frame if it's not set as row names
+enrich_by_perturb_my_df <- as.data.frame(enrich_by_perturb_my_wide)
+
+rownames(enrich_by_perturb_my_df) <- enrich_by_perturb_my_df$Pathway
+enrich_by_perturb_my_df$Pathway <- NULL
+
+# Convert the data frame to a matrix, as Heatmap function works with matrix input
+mat <- as.matrix(enrich_by_perturb_my_df)
+
+# Do the same for GSEA
+enrich_by_perturb_gsfa_wide = 
+  enrich_by_perturb_gsfa %>% 
+  filter(Pathway %in% neuron_pathway) %>% 
+  mutate(Pathway = str_replace_all(Pathway, abbreviations)) %>% 
+  filter(Fold.Enrichment>2) %>% 
+  pivot_wider(names_from = perturbation, 
+              values_from = Fold.Enrichment, 
+              id_cols = Pathway,
+              values_fill = list(Fold.Enrichment = 0))
+
+# First, remove the 'Pathway' column from the data frame if it's not set as row names
+enrich_by_perturb_gsfa_df <- as.data.frame(enrich_by_perturb_gsfa_wide)
+rownames(enrich_by_perturb_gsfa_df) <- enrich_by_perturb_gsfa_df$Pathway
+enrich_by_perturb_gsfa_df$Pathway <- NULL
+
+# Convert the data frame to a matrix, as Heatmap function works with matrix input
+mat_gsfa <- as.matrix(enrich_by_perturb_gsfa_df)
+
+
+###########reshape two matrix to be aligned#######
+# Step 1: Find the union of pathways from both DataFrames
+union_pathways <- union(rownames(enrich_by_perturb_my_df), rownames(enrich_by_perturb_gsfa_df))
+
+# Step 2: Create new DataFrames based on the union of pathways, initializing with NA values
+# For the first DataFrame (enrich_by_perturb_my)
+enrich_by_perturb_my_df_union <- data.frame(matrix(NA, 
+                                                   nrow = length(union_pathways), 
+                                                   ncol = ncol(enrich_by_perturb_my_df), 
+                                                   dimnames = list(union_pathways, colnames(enrich_by_perturb_my_df))))
+
+# For the second DataFrame (enrich_by_perturb_gsfa)
+enrich_by_perturb_gsfa_df_union <- data.frame(matrix(NA, 
+                                                     nrow = length(union_pathways), 
+                                                     ncol = ncol(enrich_by_perturb_gsfa_df), 
+                                                     dimnames = list(union_pathways, colnames(enrich_by_perturb_gsfa_df))))
+
+# Step 3: Fill the new DataFrames with existing data, leave as NA if pathway does not exist
+# For enrich_by_perturb_my_df_union
+for(pathway in union_pathways) {
+  if(pathway %in% rownames(enrich_by_perturb_my_df)) {
+    enrich_by_perturb_my_df_union[pathway, ] <- enrich_by_perturb_my_df[pathway, ]
+  } # If not found, the row remains filled with NAs, as initialized
+}
+
+# For enrich_by_perturb_gsfa_df_union
+for(pathway in union_pathways) {
+  if(pathway %in% rownames(enrich_by_perturb_gsfa_df)) {
+    enrich_by_perturb_gsfa_df_union[pathway, ] <- enrich_by_perturb_gsfa_df[pathway, ]
+  } # If not found, the row remains filled with NAs, as initialized
+}
+
+# Now, both enrich_by_perturb_my_df_union and enrich_by_perturb_gsfa_df_union are aligned and ready for analysis
+# Convert the aligned DataFrame to a matrix for the heatmap
+mat_my_aligned <- as.matrix(enrich_by_perturb_my_df_union)
+# Convert the aligned DataFrame to a matrix for the heatmap
+mat_gsfa_aligned <- as.matrix(enrich_by_perturb_gsfa_df_union)
+
+# Create the heatmap
+abs_FC_colormap <- circlize::colorRamp2(breaks = c(0, 2, 4, 6),
+                                        colors = c("grey95", "#B05923","#800020","#4C0009"))
+
+pathway_map = Heatmap(mat_my_aligned, 
+              name = "Fold Enrichment", 
+              col = abs_FC_colormap,
+              na_col = "grey90",
+              rect_gp = gpar(pathway = "none"),
+              border_gp = gpar(col = "black"),
+              row_title = "Neuron-related Pathway", 
+              column_title = NULL,
+              cluster_rows = F,
+              cluster_columns = F, 
+              show_row_names = F,
+              show_heatmap_legend = F,
+              show_row_dend = F, show_column_dend = F,
+              column_names_gp = gpar(fontsize = 14),
+              column_names_rot = 45,
+              column_names_side = "bottom",
+              width = unit(6, "cm"),
+              column_title_gp = gpar(fontface = "bold", fontsize = 14), 
+              row_title_gp = gpar(fontface = "bold", fontsize = 14))
+#draw(pathway_map, heatmap_legend_side = "bottom")
+#ht1_plot <- grid.grabExpr(draw(pathway_map))
+
+# Create the heatmap
+pathway_map_gsfa = Heatmap(mat_gsfa_aligned, 
+                           name = "Fold Enrichment",
+                           col = abs_FC_colormap,
+                           na_col = "grey90",
+                           rect_gp = gpar(pathway = "none"),
+                           border_gp = gpar(col = "black"),
+                           row_title = NULL, 
+                           column_title = NULL,
+                           cluster_rows = F,
+                           cluster_columns = F, 
+                           show_row_names = F,
+                           show_row_dend = F, show_column_dend = F,
+                           show_heatmap_legend = T,
+                           row_names_gp = gpar(fontsize = 14),
+                           column_names_gp = gpar(fontsize = 14),
+                           column_names_rot = 45,
+                           column_names_side = "bottom",
+                           width = unit(6, "cm"),
+                           column_title_gp = gpar(fontface = "bold", fontsize = 14), 
+                           row_title_gp = gpar(fontface = "bold", fontsize = 14))
+#draw(pathway_map_gsfa, heatmap_legend_side = "bottom")
+
+#combined_ht <- pathway_map + pathway_map_gsfa
+# Draw and capture the first heatmap
+ht1_plot <- grid.grabExpr(draw(pathway_map))
+
+# Assuming ht2_plot and ht3_plot are similar graphical objects for the second and third heatmaps
+ht2_plot <- grid.grabExpr(draw(pathway_map_gsfa)) 
+
+title1 <- textGrob("PerturbVI", gp = gpar(col = "black", fontsize = 14, fontface = "bold"))
+title2 <- textGrob("GSFA", gp = gpar(col = "black", fontsize = 14, fontface = "bold",hjust=0))
+combined_ht1 <- plot_grid(title1, ht1_plot, ncol = 1, align = 'v', rel_heights = c(0.1, 1))
+combined_ht2 <- plot_grid(title2, ht2_plot, ncol = 1, align = 'v', rel_heights = c(0.1, 1))
+combined_ht <- plot_grid(combined_ht1,combined_ht2,nrow=1)
+
+# without title
+combined_ht_no_title <- plot_grid(ht1_plot,ht2_plot,nrow=1)
+ggsave("./enrich_by_perturb_hm.png", plot = combined_ht_no_title, path = "./", dpi = 1000,
+       height = one_row_height*2, width = two_col)
+ggsave("./enrich_by_perturb.pdf", plot = combined_ht, path = "./", dpi = 1000,
+       height = one_row_height*2, width = two_col*1.2)
+############### Step 5. overall effect in neuron diff ###################
+eff_colormap <- circlize::colorRamp2(breaks = c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+                                     colors = c("#07006b","#1200f9", "#7166ff","grey95","#e7767f","#e83828","#bf3d22"))
+
+pathway_colormap = c("#027347","#7f702a","#a81e32","#f08837","#370708","#81D8D0","#dfb428","#738896","#003153")
+
+#neuron_diff = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/neuron_diff_vi.csv") %>% 
+#  rename("gene" = `...1`)
+
+lfsr_diff = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/lfsr_diff_vi.csv") %>% 
+  rename("gene" = `...1`)
+
+neuron_diff = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/differentiation_pathway_gene_update.csv")
+#neuron_diff_path = read_csv("/Users/dongyuan/Documents/Project/gSuSiEPCA/luhmes/differentiation_pathway_gene.csv")
+
+#manually update gene annotation
+
+
+neuron_diff = 
+  neuron_diff %>% 
+  mutate(pathway = str_replace_all(pathway, abbreviations)) 
+
+
+complexplot_gene_perturbation <- function(effect_df,
+                                          effect_name = "PerturbVI\nOverall effect",
+                                          show_row_name = T,
+                                          cluster_col = F,
+                                          score_break = c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+                                          color_break = c("#07006b","#1200f9", "#7166ff","grey95","#e7767f","#e83828","#bf3d22"),
+                                          legend_title_fontsize = 20, 
+                                          legend_label_fontsize = 18,
+                                          row_names_fontsize = 14){
+  # reorder the dataframe by pathway
+  effect_df = effect_df[order(effect_df$pathway), ]
+  # extract numeric column
+  numeric_columns <- sapply(effect_df, is.numeric)
+  effect_mat = as.matrix(effect_df[,numeric_columns])
+  rownames(effect_mat) = effect_df$gene
+  
+  # factorize pathway
+  effect_df$pathway <- factor(effect_df$pathway, levels = unique(effect_df$pathway))
+  
+  lgd_list <- list()
+  col_fun <- circlize::colorRamp2(breaks = score_break, colors = color_break)
+  lgd_list[["effectsize"]] <- Legend(title = effect_name,
+                                     at = score_break,
+                                     col_fun = col_fun,
+                                     legend_gp = gpar(fontsize = 20))  # Title fontsize for legends
+  
+  marker_colormap <- structure(pathway_colormap[1:length(levels(effect_df$pathway))],
+                               names = levels(effect_df$pathway))
+  lgd_list[["Marker"]] <- Legend(title = "Gene annotation",
+                                 labels = levels(effect_df$pathway),
+                                 at = levels(effect_df$pathway),
+                                 legend_gp = gpar(fill = marker_colormap, fontsize = 20))  # Label fontsize for legends
+  
+  right_annot <- rowAnnotation(Marker = effect_df$pathway,
+                               col = list(Marker = marker_colormap),
+                               annotation_legend_param = list(
+                                 Marker = list(
+                                   title = "Marker annotation",
+                                   at = levels(effect_df$pathway),
+                                   labels = levels(effect_df$pathway),
+                                   legend_gp = gpar(fontsize = 20)  # Adjust font size for labels within annotations
+                                 )
+                               ),
+                               show_annotation_name = F,
+                               show_legend = F)
+  
+  map1 <- Heatmap(effect_mat,
+                  name = effect_name,
+                  col = col_fun,
+                  rect_gp = gpar(pathway = "none"),
+                  border_gp = gpar(col = "black"),
+                  row_title = "Downstream genes",
+                  column_title = "Perturbations",
+                  cluster_rows = F, cluster_columns = cluster_col,
+                  show_row_dend = FALSE, 
+                  show_column_dend = FALSE, 
+                  right_annotation = right_annot,
+                  show_heatmap_legend = F,
+                  show_row_names = show_row_name,
+                  row_names_gp = gpar(fontsize = row_names_fontsize), 
+                  column_names_rot = 45,
+                  column_names_side = "top",
+                  column_title_side = "bottom",
+                  column_title_gp = gpar(fontface = "bold", fontsize = 14), 
+                  row_title_gp = gpar(fontface = "bold", fontsize = 14))
+  
+  draw(map1, annotation_legend_list = lgd_list)
+}
+
+
+
+
+complexplot_gene_perturbation <- function(effect_df,
+                                          clus_row = F,
+                                          clus_col = T,
+                                          show_row_name = T,
+                                          effect_name = "PerturbVI\nOverall effect",
+                                          score_break = c(-0.4,-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3,0.4),
+                                          color_break = c("#00004d","#1034A6","#1200f9", "#7166ff","grey95","#e7767f","#e83828","#bf3d22","#8A0000"),
+                                          pathway_order = NULL, # Custom order for pathway levels
+                                          within_group_order = NULL){
+  
+  # factorize pathway
+  # Custom order for pathway levels
+  if (!is.null(pathway_order)) {
+    effect_df$pathway <- factor(effect_df$pathway, levels = pathway_order)
+  } else {
+    effect_df$pathway <- factor(effect_df$pathway, levels = unique(effect_df$pathway))
+  }
+  
+  
+  # Custom within-group ordering
+  if (!is.null(within_group_order)) {
+    # Assuming within_group_order is a named list with names as pathway levels and each element as a vector of gene names in the desired order
+    effect_df <- effect_df[with(effect_df, order(pathway, match(gene, unlist(within_group_order[pathway])))), ]
+  }
+  
+  #reorder the dataframe by pathway
+  effect_df = effect_df[order(effect_df$pathway), ]
+  #extract numeric column
+  numeric_columns <- sapply(effect_df, is.numeric)
+  effect_mat = as.matrix(effect_df[,numeric_columns])
+  rownames(effect_mat) = effect_df$gene
+  
+  lgd_list <- list()
+  col_fun <- circlize::colorRamp2(breaks = score_break,
+                                  colors = color_break)
+  lgd_list[["effectsize"]] <- Legend(title = effect_name,
+                                     at = score_break,
+                                     col_fun = col_fun)
+  
+  marker_colormap <- structure(pathway_colormap[1:length(levels(effect_df$pathway))],
+                               names = levels(effect_df$pathway))
+  lgd_list[["Marker"]] <-  Legend(title = "Marker annotation",
+                                  labels = levels(effect_df$pathway),
+                                  at = levels(effect_df$pathway),
+                                  legend_gp = gpar(fill = marker_colormap))
+  right_annot <- rowAnnotation(Marker = effect_df$pathway,
+                               col = list(Marker = marker_colormap),
+                               annotation_legend_param = list(
+                                 Marker = list(
+                                   title = "Marker annotation",
+                                   at = levels(effect_df$pathway),
+                                   labels = levels(effect_df$pathway)
+                                 )
+                               ),
+                               show_annotation_name = F,
+                               show_legend = F)
+  
+  map1 <-   Heatmap(effect_mat,
+                    name = effect_name,
+                    col = col_fun,
+                    rect_gp = gpar(pathway = "none"),
+                    border_gp = gpar(col = "black"),
+                    row_title = "Downstream genes",
+                    column_title = "Perturbations",
+                    cluster_rows = clus_row, 
+                    cluster_columns = clus_col,
+                    show_row_dend = FALSE, 
+                    show_column_dend = FALSE, 
+                    right_annotation = right_annot,
+                    show_heatmap_legend = F,
+                    show_row_names = show_row_name,
+                    row_names_gp = gpar(fontsize = 14),
+                    column_names_gp = gpar(fontsize = 14),
+                    column_names_rot = 45,
+                    column_names_side = "top",
+                    column_title_side = "bottom",
+                    column_title_gp = gpar(fontface = "bold", fontsize = 14), 
+                    row_title_gp = gpar(fontface = "bold", fontsize = 14))
+  
+  draw(map1, annotation_legend_list = lgd_list)
+}
+
+
+#-2 neruon category for easy plotting
+neuron_diff_2 = neuron_diff %>% filter(!(gene %in% c("XBP1","CBLN1")))
+all_effect = complexplot_gene_perturbation(neuron_diff_2,clus_col = T,show_row_name = F)
+png("all_effect.png", width = two_col, height = one_row_height*2.5, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(all_effect)
+dev.off() # Close the PNG device
+
+##select top
+exclude_small_eff_gene = c("DCC","RUFY3","CRMP1","PPIA","YWHAZ","CTHRC1","PHGDH","CFL1","SOD1","HSP90AB1","HSP90AA1","CASP3",
+                           "LHX9","DCX","ANK3","DPYSL2","ETV1","NRXN1","NGFR","RIPOR2","MYCBP2","APLP1","DPYSL5","NCAM1","SERPINI1",
+                           "CTNNB1","PTPRG","XBP1","CBLN1","SOX11",
+                           "PBX1","NR2F1","EFNB3","CAMK2B","BAIAP2","HSPA5","IQSEC2","ACTB","IQSEC1","RAB13","RAB3A","UCHL1")
+
+neuron_diff_subset = neuron_diff %>% filter(gene %notin% exclude_small_eff_gene) %>% select(-DYRK1A) %>% 
+  select(gene,ADNP,CHD2,ASH1L,PTEN,SETD5,POGZ,ARID1B,pathway)
+subset_effect = complexplot_gene_perturbation(neuron_diff_subset,clus_col = T)
+
+neuron_diff_subset_2 = neuron_diff_subset %>% filter(pathway %in% c("mature neuron","neg. reg. of neuron differentiation","neg. reg. of neuron proj. dev.","pos. reg. of neuron proj. dev.","neuron proj. dev."))
+subset_effect_2 = complexplot_gene_perturbation(neuron_diff_subset_2[,c("gene","PTEN","ADNP","CHD2","ASH1L","SETD5","POGZ","ARID1B","pathway")],clus_col = F,
+                                                pathway_order = c("mature neuron","pos. reg. of neuron proj. dev.","neg. reg. of neuron proj. dev.","neg. reg. of neuron differentiation","neuron proj. dev."),
+                                                within_group_order = list(`mature neuron` = c("NEFL","CRABP2","PCP4","MAP2","MAP1B","ELAVL4","DPYSL3","STMN2")))
+
+
+png("subset_effect_2.png", width = two_col, height = one_row_height*2, units = 'in', res = 1000) # Adjust 'width', 'height', and 'res' as needed
+draw(subset_effect_2)
+dev.off() # Close the PNG device
+
+
+overall_manu_plot <- grid.grabExpr(draw(subset_effect))
+
+third_row = plot_grid(combined_ht,overall_manu_plot,nrow = 1, rel_widths = c(1.2, 1),labels = c("E","F"))
+
+###final plot
+spacer <- ggplot() + 
+  theme_void() + 
+  theme(plot.background = element_blank())  # Ensure the spacer has no background or borders
+
+# Combine your rows with the spacer
+final = plot_grid(
+  first_row, 
+  spacer, 
+  second_row, 
+  spacer, 
+  third_row, 
+  nrow = 5,   
+  rel_heights = c(3.7, 0.2, 3,0.2,5)  
+)
+
+ggsave("./final_manu.pdf", plot = final, path = "./", dpi = 1600,
+       height = one_row_height*11, width = two_col*4)
+
+# for dissertation
+final_1 = plot_grid(
+  first_row, 
+  spacer, 
+  second_row, 
+  nrow = 3,   
+  rel_heights = c(3.5, 0.3, 3)  
+)
+ggsave("./disset_1.pdf", plot = final_1, path = "./", dpi = 1200,
+       height = one_row_height*5, width = two_col*2.5)
+
+
