@@ -147,6 +147,10 @@ get_neuron_pathway_subset <- function(factor, enrich_pv_neuron) {
   return(neuron_pathway_subset)
 }
 
+# clean up the pathway name
+enrich_pv_neuron$Pathway_short <- gsub("\n", " ", enrich_pv_neuron$Pathway_short)
+enrich_pv_neuron$Pathway_short <- trimws(enrich_pv_neuron$Pathway_short_clean)
+
 neuron_pathway_subset_2 <- get_neuron_pathway_subset(2, enrich_pv_neuron)
 neuron_pathway_subset_3 <- get_neuron_pathway_subset(3, enrich_pv_neuron)
 neuron_pathway_subset_5 <- get_neuron_pathway_subset(5, enrich_pv_neuron)
