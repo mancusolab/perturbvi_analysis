@@ -15,13 +15,13 @@ output_dir <- file.path(script_dir, "figures")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 model_pal <- c(
-  "GSFA" = "#008C8C",
-  "PerturbVI" = "#E85827"
+  "GSFA" = "#984EA3",
+  "PerturbVI" = "#FF7F00"
 )
 fill_pal <- c(
   model_pal,
-  "Mis-specified GSFA" = "#99d8c9",
-  "Mis-specified PerturbVI" = "#fdae6b"
+  "Mis-specified GSFA" = "#CBA6D6",
+  "Mis-specified PerturbVI" = "#FDBE85"
 )
 legend_levels <- names(fill_pal)
 
