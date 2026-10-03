@@ -7,10 +7,10 @@ Scenarios (80 seeds, seeds 0..79):
   l_dim (L):  100, 125, 150, 175, 200  (true L=150, b=0.20, g=100)
 
 Usage:
-  python 1_simulation_current.py --b_sparsity 0.05 --out perturbvi_b_0.05.csv
-  python 1_simulation_current.py --g_dim 100 --out perturbvi_g_100.csv
-  python 1_simulation_current.py --z_dim 5 --out perturbvi_z_5.csv
-  python 1_simulation_current.py --l_dim 100 --out perturbvi_l_100.csv
+  python simulation_current.py --b_sparsity 0.05 --out perturbvi_b_0.05.csv
+  python simulation_current.py --g_dim 100 --out perturbvi_g_100.csv
+  python simulation_current.py --z_dim 5 --out perturbvi_z_5.csv
+  python simulation_current.py --l_dim 100 --out perturbvi_l_100.csv
 """
 import argparse
 import time
@@ -62,7 +62,7 @@ def parse_args():
     p.add_argument("--init", choices=["auto", "pca", "random"], default="auto")
     p.add_argument("--n_sims", type=int, default=80, help="number of seeds")
     p.add_argument("--seed_start", type=int, default=0)
-    p.add_argument("--out", type=str, default="1_simulation_current.csv")
+    p.add_argument("--out", type=str, default="simulation_current.csv")
     return p.parse_args()
 
 

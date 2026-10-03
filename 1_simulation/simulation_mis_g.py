@@ -5,7 +5,7 @@ Scenario (80 seeds, seeds 0..79; n=3000, p=4000, K=4, L=150, g=100, b=0.20):
   remove_prop: 0.1, 0.2, 0.3, 0.4, 0.5
 
 Usage:
-  python 2_simulation_mis_g.py --remove_prop 0.1 --out perturbvi_misg_10.csv
+  python simulation_mis_g.py --remove_prop 0.1 --out perturbvi_misg_10.csv
 """
 import argparse
 from pathlib import Path
@@ -41,7 +41,7 @@ def parse_args():
                    help="fraction of perturbation columns to drop")
     p.add_argument("--n_sims", type=int, default=80)
     p.add_argument("--seed_start", type=int, default=0)
-    p.add_argument("--out", type=str, default="2_simulation_mis_g.csv")
+    p.add_argument("--out", type=str, default="simulation_mis_g.csv")
     return p.parse_args()
 
 
