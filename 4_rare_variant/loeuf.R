@@ -13,6 +13,7 @@ dir.create("results", showWarnings = FALSE)
 PERTURBED <- c("ADNP", "ARID1B", "ASH1L", "CHD2", "CHD8", "CTNND2", "DYRK1A",
                "HDAC5", "MECP2", "MYT1L", "POGZ", "PTEN", "RELN", "SETD5")
 FACTORS <- paste0("w", 0:19)
+# Factor members are genes with loading PIP strictly greater than 0.95.
 THRESHOLD <- 0.95
 N_PERM <- 10000
 
@@ -107,7 +108,7 @@ check1 <- map_dfr(FACTORS, function(f) {
 check1$q_bh <- p.adjust(check1$p, "BH")
 
 check2 <- map_dfr(FACTORS, function(f) {
-  fac <- universe[pip[universe, f] >= THRESHOLD]
+  fac <- universe[pip[universe, f] > THRESHOLD]
   fac_loeuf <- uni$LOEUF[uni$approved %in% fac & has_loeuf]
   rest_loeuf <- uni$LOEUF[!uni$approved %in% fac & has_loeuf]
   pv <- wilcox.test(fac_loeuf, rest_loeuf, alternative = "two.sided", exact = FALSE)$p.value
@@ -126,7 +127,7 @@ write.csv(checks, "results/suppl_constraint_tests.csv", row.names = FALSE)
 set.seed(0)
 membership <- matrix(FALSE, nrow = length(universe), ncol = length(FACTORS))
 for (j in seq_along(FACTORS)) {
-  membership[, j] <- universe %in% rownames(pip)[pip[, FACTORS[j]] >= THRESHOLD]
+  membership[, j] <- universe %in% rownames(pip)[pip[, FACTORS[j]] > THRESHOLD]
 }
 storage.mode(membership) <- "integer"
 asd_int <- as.integer(asd_bg)

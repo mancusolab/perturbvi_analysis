@@ -18,6 +18,7 @@ dir.create("results", showWarnings = FALSE)
 PERTURBED <- c("ADNP", "ARID1B", "ASH1L", "CHD2", "CHD8", "CTNND2", "DYRK1A",
                "HDAC5", "MECP2", "MYT1L", "POGZ", "PTEN", "RELN", "SETD5")
 FACTORS <- paste0("w", 0:19)
+# Binary enrichment members are genes with loading PIP strictly greater than 0.95.
 THRESHOLD <- 0.95
 
 # 1. Prep: factor x gene -> gene x wN, ENSG -> symbol -----------------------------
@@ -111,7 +112,7 @@ fisher_enrich <- function(fset, gset_interest, background) {
 # 4. Per-factor binary enrichment -------------------------------------------------
 
 factor_enrichment <- map_dfr(FACTORS, function(f) {
-  fset <- intersect(rownames(pip)[pip[, f] >= THRESHOLD], universe)
+  fset <- intersect(rownames(pip)[pip[, f] > THRESHOLD], universe)
   r <- fisher_enrich(fset, asd_bg, universe)
   tibble(
     factor = f,
@@ -134,7 +135,7 @@ asd_clu <- asd_clu[!duplicated(asd_clu$approved), ]
 asd_clu <- asd_clu[asd_clu$approved %in% universe, ]
 
 cluster_enrichment <- map_dfr(FACTORS, function(f) {
-  fset <- intersect(rownames(pip)[pip[, f] >= THRESHOLD], universe)
+  fset <- intersect(rownames(pip)[pip[, f] > THRESHOLD], universe)
   map_dfr(1:6, function(k) {
     cset <- asd_clu$approved[asd_clu$Cluster == k]
     r <- fisher_enrich(fset, cset, universe)
