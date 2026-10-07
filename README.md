@@ -4,8 +4,7 @@
 
 # PerturbVI analysis
 
-Analysis code for *PerturbVI: scalable inference of genetic regulatory modules
-from single-cell CRISPR perturbation screens*.
+Analysis code for *PerturbVI: scalable inference of gene programs from single-cell CRISPR perturbation data*.
 
 > [!IMPORTANT]
 > Software: [github.com/mancusolab/perturbvi](https://github.com/mancusolab/perturbvi) <br/>
