@@ -8,8 +8,8 @@ Analysis code for *PerturbVI: scalable inference of genetic regulatory modules
 from single-cell CRISPR perturbation screens*.
 
 > [!IMPORTANT]
-> Software: [https://github.com/mancusolab/perturbvi](https://github.com/mancusolab/perturbvi) <br/>
-> Documentation: [https://mancusolab.github.io/perturbvi](https://mancusolab.github.io/perturbvi) <br/>
+> Software: [github.com/mancusolab/perturbvi](https://github.com/mancusolab/perturbvi) <br/>
+> Documentation: [mancusolab.github.io/perturbvi](https://mancusolab.github.io/perturbvi) <br/>
 > Data: [doi.org/10.34728/FK2/TM9ELW](https://doi.org/10.34728/FK2/TM9ELW)
 
 ## Analyses
