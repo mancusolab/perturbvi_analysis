@@ -16,4 +16,4 @@ Analysis code for *PerturbVI: scalable inference of gene programs from single-ce
 - **simulation**: PerturbVI and GSFA benchmarks across the b, g, K and L sweeps, and the missing-target scenario.
 - **luhmes**: PerturbVI fit and GO enrichment for the LUHMES screen.
 - **replogle**: PerturbVI fit and figures for the large-scale K562 screen.
-- **rare_variant**: ASD rare-variant enrichment and LOEUF constraint.
+- **rare_variant**: ASD rare-variant enrichment.
