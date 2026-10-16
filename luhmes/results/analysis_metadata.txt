@@ -1,0 +1,8 @@
+Run date: 2026-10-13 18:15:35 PDT
+WebGestaltR: 1.0.1
+Enrichment: ORA; GO BP noRedundant (geneontology_Biological_Process_noRedundant).
+WebGestaltR minNum, maxNum, fdrMethod, sigMethod, and fdrThr uses package defaults.
+WebGestaltR default significance uses BH-adjusted FDR < 0.05.
+Foreground: genes with LFSR < 0.05 for each method and perturbation.
+Shared reference background: 6000 modeled genes.
+Perturbations analyzed: 14.
